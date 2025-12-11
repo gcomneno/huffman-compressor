@@ -1,10 +1,10 @@
-# lasagna-compressor
-> A layered experimental text compressor for Italian, inspired by linguistic structure… and baked like a lasagna. 🍝
+# huffman-compressor
+> A layered experimental text compressor for Italian, inspired by linguistic structure… and baked like a huffman. 🍝
 ---
 
 ## Overview (EN)
 
-**lasagna-compressor** is an experimental text compressor that tries to exploit different *linguistic layers* of Italian, instead of treating text as a flat stream of bytes.
+**huffman-compressor** is an experimental text compressor that tries to exploit different *linguistic layers* of Italian, instead of treating text as a flat stream of bytes.
 
 It is **not** meant to beat industrial compressors like gzip.  
 It is a playground for:
@@ -18,7 +18,7 @@ The current implementation is a single Python script using **Huffman coding** on
 
 ## Panoramica (IT)
 
-**lasagna-compressor** è un compressore di testo **sperimentale** che prova a usare i vari *strati* della lingua italiana (byte, lettere, sillabe, parole, lemmi) invece di schiacciare tutto alla cieca.
+**huffman-compressor** è un compressore di testo **sperimentale** che prova a usare i vari *strati* della lingua italiana (byte, lettere, sillabe, parole, lemmi) invece di schiacciare tutto alla cieca.
 
 Obiettivo:
 
@@ -130,7 +130,7 @@ Comandi CLI: `c4` / `d4`.
 Dal root del progetto:
 
 ```bash
-cd lasagna-compressor
+cd huffman-compressor
 python3 src/python/gcc_huffman.py  # oppure ./gcc_huffman.py se è nella root
 ````
 
