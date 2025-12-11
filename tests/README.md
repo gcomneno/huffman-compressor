@@ -1,4 +1,4 @@
-# tests/ – How to play with lasagna-compressor
+# tests/ – How to play with huffman-compressor
 
 Questa directory contiene:
 - file di test (`testdata/`)
@@ -155,4 +155,4 @@ In futuro, si potrebbe aggiungere:
     * controlla il roundtrip,
     * registra le statistiche in una tabellina.
 
-Per ora, i test manuali sopra bastano per giocare e capire il comportamento della lasagna. 🍝
+Per ora, i test manuali sopra bastano per giocare e capire il comportamento della huffman. 🍝

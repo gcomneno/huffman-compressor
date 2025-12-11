@@ -9,7 +9,7 @@ DATA_DIR=tests/testdata
 FILES=("small.txt" "medium.txt")
 MODES=("1" "2" "3" "4")
 
-echo "=== lasagna-compressor roundtrip tests ==="
+echo "=== huffman-compressor roundtrip tests ==="
 echo "Using: $PYTHON $SCRIPT"
 echo
 

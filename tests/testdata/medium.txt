@@ -1,5 +1,5 @@
 Questo è un file di test di dimensioni leggermente maggiori, pensato per mettere
-alla prova i vari strati della nostra lasagna-compressor. L’idea è avere un testo
+alla prova i vari strati della nostra huffman-compressor. L’idea è avere un testo
 abbastanza lungo da rendere visibili i compromessi tra header pesanti,
 pre-processing linguistico e reale guadagno in termini di bit per simbolo.
 
@@ -9,7 +9,7 @@ dei simboli, altri sfruttano la ridondanza locale con meccanismi simili a LZ77 o
 Nel nostro progetto, invece, vogliamo vedere che cosa succede quando smettiamo di
 pensare in termini di byte e cominciamo a ragionare in termini di struttura linguistica.
 
-Lo strato più semplice della lasagna è lo step a byte, dove applichiamo Huffman
+Lo strato più semplice della huffman è lo step a byte, dove applichiamo Huffman
 direttamente sui valori da 0 a 255. È una baseline utile, perché ci dice quanto
 riusciamo a comprimere senza alcuna informazione sulla lingua. Subito sopra troviamo
 lo strato delle vocali e consonanti, dove separiamo il testo in tre flussi:
@@ -56,17 +56,17 @@ Puoi provare a comprimerlo con i vari step:
 e osservare come cambiano le dimensioni dei file generati, il rapporto di compressione
 e il numero di bit per simbolo. Probabilmente scoprirai che, almeno in questa fase,
 gli header pesano parecchio e i risultati non sono ancora "competitivi". Ma va bene così:
-lo scopo di lasagna-compressor è soprattutto esplorare, misurare e imparare.
+lo scopo di huffman-compressor è soprattutto esplorare, misurare e imparare.
 
 Se un giorno questo file dovesse diventare troppo corto per i tuoi esperimenti, puoi
 sempre aggiungere altre sezioni, magari con testi di stile diverso: dialoghi, descrizioni
 tecniche, narrativo, elenchi puntati. Osservare come reagiscono i vari strati della
-lasagna a tipi di testo eterogenei può dare indicazioni interessanti su quali livelli
+huffman a tipi di testo eterogenei può dare indicazioni interessanti su quali livelli
 linguistici siano davvero utili per la compressione e quali invece rischiano di
 essere solo una complicazione romantica ma poco pratica.
 
 Per il momento, questo basta. Se stai leggendo queste righe, probabilmente hai già
 eseguito almeno un paio di comandi gcc_huffman.py e hai visto qualche numero uscire
 a schermo. Da qui in poi il laboratorio è aperto: modifica il testo, duplica il file,
-confronta i risultati e annota le tue osservazioni. La lasagna, con un po’ di pazienza,
+confronta i risultati e annota le tue osservazioni. La huffman, con un po’ di pazienza,
 diventerà sempre più interessante.

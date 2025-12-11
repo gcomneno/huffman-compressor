@@ -1,5 +1,5 @@
-# Roadmap – lasagna-compressor
-Questo file raccoglie le idee di sviluppo per `lasagna-compressor`, organizzate per “strati di ambizione”:
+# Roadmap – huffman-compressor
+Questo file raccoglie le idee di sviluppo per `huffman-compressor`, organizzate per “strati di ambizione”:
 - ✅ Done / prototipato
 - 🟡 TODO (ragionevole)
 - 🟣 Maybe (quando/SE c’è voglia)
@@ -234,6 +234,6 @@ La roadmap è pensata per:
 2. Permettere a chi apre il progetto (anche “io tra 6 mesi”) di capire:
    - cosa è già sperimentato,
    - cosa è pianificato,
-   - cosa è puramente un sogno alcolico da lasagna night.
+   - cosa è puramente un sogno alcolico da huffman night.
 
 Questa roadmap **non è un contratto**: serve solo a non perdere di vista le idee buone (e quelle pazze) man mano che il progetto evolve.

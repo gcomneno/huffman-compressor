@@ -1,6 +1,6 @@
-# Binary formats – lasagna-compressor
+# Binary formats – huffman-compressor
 
-This document describes the **experimental binary formats** used by `lasagna-compressor`.
+This document describes the **experimental binary formats** used by `huffman-compressor`.
 
 All formats share:
 

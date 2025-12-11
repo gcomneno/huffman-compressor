@@ -1,11 +1,11 @@
-# Design notes – lasagna-compressor
-> Appunti di progettazione per un compressore testuale a strati (“lasagna”) focalizzato sull’italiano e sulla struttura linguistica.
+# Design notes – huffman-compressor
+> Appunti di progettazione per un compressore testuale a strati (“huffman”) focalizzato sull’italiano e sulla struttura linguistica.
 ---
 
 ## 1. Obiettivi del progetto
 
 ### 1.1 Obiettivo principale
-`lasagna-compressor` **non** nasce per battere gzip, zstd, ecc.  
+`huffman-compressor` **non** nasce per battere gzip, zstd, ecc.  
 L’obiettivo è:
 - sperimentare **come diversi livelli di struttura linguistica** influenzano la compressione,
 - avere un laboratorio per:
@@ -29,10 +29,10 @@ In sintesi: è un progetto **didattico / di ricerca personale**, non un prodotto
 
 ---
 
-## 2. Strati della “lasagna linguistica”
+## 2. Strati della “huffman linguistica”
 
 L’idea di base: un testo ha molti livelli “strutturali”.  
-`lasagna-compressor` li esplora uno alla volta.
+`huffman-compressor` li esplora uno alla volta.
 
 ### 2.1 Strato 0 – Byte grezzi
 
@@ -212,7 +212,7 @@ Alcuni Step (es. v2, v3, v4):
   - ogni livello porta vocabolari o tabelle aggiuntive,
   - i benefici nel bitstream non compensano il costo dell’header.
 
-Parte del “gioco” della lasagna è proprio **osservare questo compromesso**:
+Parte del “gioco” della huffman è proprio **osservare questo compromesso**:
 
 - quanto guadagni nel bitstream,
 - quanto perdi in metadati,
@@ -267,7 +267,7 @@ Riassunto della roadmap (da leggere insieme a `docs/roadmap.md` / README):
 
 ## 5. Note finali
 
-`lasagna-compressor` è una **sandbox linguistico-algoritmica**:
+`huffman-compressor` è una **sandbox linguistico-algoritmica**:
 
 - serve più a fare domande che a dare risposte definitive,
 - mira a rendere espliciti i layer che spesso i compressori “seri” nascondono dentro modelli complessi.
