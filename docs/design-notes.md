@@ -1,10 +1,12 @@
 # Design notes – huffman-compressor
 > Appunti di progettazione per un compressore testuale a strati (“huffman”) focalizzato sull’italiano e sulla struttura linguistica.
+
 ---
 
 ## 1. Obiettivi del progetto
 
 ### 1.1 Obiettivo principale
+
 `huffman-compressor` **non** nasce per battere gzip, zstd, ecc.  
 L’obiettivo è:
 - sperimentare **come diversi livelli di struttura linguistica** influenzano la compressione,
@@ -20,7 +22,7 @@ In sintesi: è un progetto **didattico / di ricerca personale**, non un prodotto
 
 ### 1.2 Principi chiave
 
-- **Layered design**: ogni “Step” aggiunge un livello di pre-processing, ma riusa lo stesso core di compressione (Huffman su byte).
+- **Layered design**: ogni “Step” aggiunge un livello di pre-processing, ma riusa lo stesso core di compressione (Huffman).
 - **Lossless**: tutti i formati v1–v4 (e futuri) devono permettere di ricostruire il testo originale esattamente.
 - **Sperimentale**: formati, layout e API possono cambiare. Non è garantita la compatibilità lunga nel tempo.
 - **Bottom-up + top-down ibrido**:
@@ -34,31 +36,33 @@ In sintesi: è un progetto **didattico / di ricerca personale**, non un prodotto
 L’idea di base: un testo ha molti livelli “strutturali”.  
 `huffman-compressor` li esplora uno alla volta.
 
-### 2.1 Strato 0 – Byte grezzi
+### 2.1 Strato 0 – Byte grezzi (Step1 / v1)
 
 - Rappresentazione classica: sequenza di byte.
 - Nessuna consapevolezza di lettere, parole, lingua.
 - Compressione tradizionale: Huffman, LZ, ecc.
 
 Nel progetto, questo è lo **Step 1 (v1)**:  
-**Huffman sui byte** con un header semplice (ma relativamente pesante per file piccoli).
+**Huffman sui byte** con un header ora **compattato** (si salvano solo i simboli con frequenza > 0).
+
+È il baseline “onesto” contro cui confrontare gli altri Step.
 
 ---
 
-### 2.2 Strato 1 – Lettere: vocali vs consonanti
+### 2.2 Strato 1 – Lettere: vocali vs consonanti (Step2 / v2)
 
 L’italiano (e le lingue alfabetiche in generale) hanno una struttura fonologica:
 
 - le **vocali** sono poche ma frequenti (`a,e,i,o,u`),
 - le **consonanti** sono più varie,
-- le vocali e le consonanti alternano in pattern abbastanza regolari.
+- vocali e consonanti alternano in pattern abbastanza regolari.
 
-Lo Step 2 (v2) prova a sfruttare questo:
+Lo **Step 2 (v2)** prova a sfruttare questo:
 
 - separa il testo in:
   - una **maschera V/C/O**,
   - uno stream di **vocali**,
-  - uno stream di **consonanti + altri simboli**.
+  - uno stream di **consonanti + altri simboli**,
 - comprime i tre stream separatamente con Huffman.
 
 Obiettivo concettuale:
@@ -66,14 +70,22 @@ Obiettivo concettuale:
 - se la struttura V/C/O è molto regolare, la maschera può comprimersi bene;
 - alfabeti ridotti (vocali) dovrebbero produrre codici più corti.
 
-Nella pratica:
+Esiti empirici (con i file di test attuali):
 
-- i vantaggi potenziali sono fortemente penalizzati dal costo degli header multipli,
-- è uno **Step esplorativo**, più interessante concettualmente che efficace sui file piccoli.
+- su `small` (~1KB), `medium` (~4.6KB) e `large` (~600KB):
+  - v2 è **sempre peggiore** di v1 in rapporto di compressione,
+  - su file piccoli/medi addirittura *ingrassa* parecchio rispetto all’originale.
+
+Motivo principale:
+
+- tre header Huffman distinti (mask/vowels/cons) costano molto,
+- il guadagno sui singoli stream non compensa l’overhead aggiuntivo.
+
+Conclusione attuale: **Step2 è tenuto come esperimento didattico**, non come formato “competitivo”.
 
 ---
 
-### 2.3 Strato 2 – Sillabe (pseudo-sillabe)
+### 2.3 Strato 2 – Sillabe (pseudo-sillabe, Step3 / v3)
 
 Le sillabe sono un’unità intermedia tra lettere e parole:
 
@@ -84,25 +96,36 @@ Step 3 (v3) introduce:
 
 - una tokenizzazione in:
   - **sequenze di lettere** (parole),
-  - **sequenze di non-lettere** (spazi, punteggiatura, ecc.),
-- le parole vengono spezzate in **pseudo-sillabe** con una regola grezza:
-  - taglio dopo ogni vocale,
-- si costruisce un **vocabolario di token** (sillabe + blocchi non-lettera),
-- si comprime la **sequenza di ID dei token** con Huffman.
+  - **sequenze di non-lettere** (spazi, punteggiatura, ecc.);
+- le sequenze di lettere vengono spezzate in **pseudo-sillabe** con una regola grezza:
+  - taglio dopo ogni vocale;
+- si costruisce un **vocabolario di token** (sillabe + blocchi non-lettera);
+- si comprime la **sequenza di ID dei token** con Huffman, su un alfabeto di dimensione `VOCAB_SIZE`.
 
-Obiettivo:
+Evoluzione importante:
 
-- verificare se usare sillabe come “super-simboli” porta a una distribuzione più adatta alla compressione rispetto ai singoli byte.
+- in origine v3 aveva:
+  - `VOCAB_SIZE` limitato a 256,
+  - tabella frequenze fissa `FREQ[256]` sugli ID;
+- ora v3 è stato generalizzato a **K simboli**:
+  - `VOCAB_SIZE` è un `u32`,
+  - le frequenze sono `FREQ_ID[VOCAB_SIZE]`,
+  - Huffman lavora su ID `0..VOCAB_SIZE-1` senza limite artificiale 256.
 
-Limitazioni attuali:
+Effetti pratici (sui test attuali):
 
-- sillabazione estremamente semplificata (non foneticamente accurata),
-- vocabolario limitato a 256 token distinti (per semplicità di implementazione),
-- header pesante (vocabolario + FREQ[256]).
+- su `small` (~1KB): v3 ingrossa il file (header vocabolario + freq) → rapporto ~1.665;
+- su `medium` (~4.6KB): v3 è quasi neutro rispetto all’originale (rapporto ~1.002);
+- su `large` (~600KB): v3 **batte v1** (rapporto ~0.434 vs ~0.555 di v1).
+
+Interpretazione:
+
+- la struttura a sillabe + vocabolario ha senso **solo quando il testo è abbastanza lungo**
+  da ripagare il costo del vocabolario e della tabella di frequenze.
 
 ---
 
-### 2.4 Strato 3 – Parole intere
+### 2.4 Strato 3 – Parole intere (Step4 / v4)
 
 Le **parole intere** sono un livello superiore:
 
@@ -114,23 +137,38 @@ Step 4 (v4) fa:
 
 - tokenizzazione in:
   - sequenze di lettere ASCII → **parole**,
-  - sequenze di non-lettere → **blocchi** separati,
-- vocabolario di token (parole + blocchi),
-- compressione della sequenza di ID dei token con Huffman.
+  - sequenze di non-lettere → **blocchi** separati;
+- costruzione di un vocabolario di token (parole + blocchi);
+- compressione della sequenza di ID dei token con Huffman, su alfabeto `0..VOCAB_SIZE-1` (come v3).
 
-Differenza rispetto a v3:
+Anche v4 è stato portato al modello **K-simboli**:
 
-- v3 lavora su **sillabe** come unità,
-- v4 lavora su **parole** come unità.
+- `VOCAB_SIZE` è `u32`,
+- frequenze: `FREQ_ID[VOCAB_SIZE]`,
+- Huffman sugli ID, senza limite 256.
 
-Vantaggi concettuali:
+Esiti empirici sui file di test:
 
-- le parole sono tipicamente più ripetitive e informative,
-- il vocabolario di parole può comprimere bene testi lunghi con lessico ripetuto.
+- `small` (~1KB):
+  - v4 ingrassa: rapporto ~1.729 (header troppo pesante);
+- `medium` (~4.6KB):
+  - v4 ancora peggiore dell’originale: rapporto ~1.389;
+- `large` (~600KB):
+  - v4 **batte nettamente v1**:
+    - v1 (byte-level): rapporto ~0.555,
+    - v4 (parole): rapporto ~0.236.
+
+Quindi, su testi lunghi:
+
+> **Parole intere + vocabolario + ID Huffman** diventano molto più efficienti
+> del semplice Huffman sui byte.
+
+Questo conferma sperimentalmente l’idea di partenza del progetto:
+> sfruttare la struttura linguistica su testi lunghi può portare a compressione molto migliore.
 
 ---
 
-### 2.5 Strato 4 – Lemmi e morfologia (idea Step 5)
+### 2.5 Strato 4 – Lemmi e morfologia (idea Step5)
 
 Strato più alto: **significato lessicale** + **forma morfologica**.
 
@@ -158,7 +196,7 @@ Schema ideale:
 
 Note:
 
-- per rimanere totally **lossless**, serve:
+- per rimanere totalmente **lossless**, serve:
   - un generatore morfologico affidabile:
     - `generate(lemma, tag) -> surface_form`,
   - o un dizionario delle forme originali per “correggere” eventuali ambiguità.
@@ -173,11 +211,14 @@ Note:
 Il progetto si basa su un **core Huffman** unico:
 
 - funzioni generiche:
-  - costruzione tabella frequenze (`freq[256]`),
-  - costruzione albero di Huffman,
-  - generazione tabella dei codici,
+  - costruzione tabella frequenze (lista di `u32`),
+  - albero di Huffman,
+  - tabella dei codici,
   - encode/decode di bitstream,
-- usato da tutti gli Step (v1–v4, futuro v5).
+- usato da tutti gli Step (v1–v4, futuro v5),
+- con varianti:
+  - su byte (v1/v2),
+  - su ID di token (v3/v4) tramite helper dedicati.
 
 I vari Step differiscono solo per il **pre-processing** e per il formato dell’**header**.
 
@@ -186,10 +227,9 @@ I vari Step differiscono solo per il **pre-processing** e per il formato dell’
 Impostazione attuale:
 
 - gli header (soprattutto v2–v4) sono volutamente **ridondanti e verbosi**:
-  - 256 frequenze per ogni stream nei formati che lavorano su ID byte,
-  - v1 è già stato ottimizzato per salvare solo i simboli effettivamente usati,
+  - tabelle di frequenze complete per ogni stream,
   - vocabolari espliciti salvati in chiaro,
-  - lunghezze salvate in `u64` anche dove basterebbe meno.
+  - lunghezze salvate in `u64` anche dove basterebbe meno;
 - questo aumenta l’overhead sui file piccoli, ma:
   - rende i formati più semplici da capire e debug,
   - fa da base per successivi esperimenti di **ottimizzazione header**.
@@ -199,11 +239,10 @@ L’idea è:
 2. misurare,
 3. ottimizzare header/payload solo quando serve, tenendo sempre la vecchia versione come documentazione.
 
----
-
 ### 3.3 Trade-off: header vs guadagno
 
 Il progetto mette in luce un concetto spesso invisibile nei compressori reali:
+
 > un modello più intelligente non è gratis:  
 > costa header, vocabolari, metadati.
 
@@ -212,58 +251,48 @@ Alcuni Step (es. v2, v3, v4):
 - hanno pre-processing concettualmente sensato,
 - ma nella pratica possono **peggiorare** la dimensione totale per file piccoli/medi, perché:
   - ogni livello porta vocabolari o tabelle aggiuntive,
-  - i benefici nel bitstream non compensano il costo dell’header.
+  - i benefici nel bitstream non compensano (subito) il costo dell’header.
 
-Parte del “gioco” della huffman è proprio **osservare questo compromesso**:
+Con i dati attuali:
 
-- quanto guadagni nel bitstream,
-- quanto perdi in metadati,
-- come cambia il bilancio al crescere della dimensione del testo.
+- v1 (byte) è il baseline robusto su tutte le taglie,
+- v2 (V/C/O) perde sempre contro v1 (ed è tenuto come esperimento concettuale),
+- v3 (sillabe) e v4 (parole) diventano interessanti **solo su testi lunghi**, dove:
+
+  | File                | v1 (bytes) | v3 (sillabe) | v4 (parole) |
+  |---------------------|-----------:|-------------:|------------:|
+  | small (~1KB)        | 0.801      | 1.665        | 1.729       |
+  | medium (~4.6KB)     | 0.628      | 1.002        | 1.389       |
+  | large (~600KB)      | 0.555      | 0.434        | **0.236**   |
+
+(valori ~indicativi basati su `tests/data/*`)
 
 ---
 
-## 4. Roadmap concettuale
+## 4. Roadmap concettuale (mini)
 
-Riassunto della roadmap (da leggere insieme a `docs/roadmap.md` / README):
+Riassunto della roadmap (da leggere insieme a `docs/roadmap.md`):
 
 ### 4.1 Fase 0 – Stabilizzare il prototipo Python
 
-- Garantire che v1–v4:
-  - siano stabili nella logica di compressione/decompressione,
-  - abbiano test di base (roundtrip: input → compress → decompress → input).
-- Migliorare la documentazione:
-  - `README.md`,
-  - `docs/formats.md` (questo file),
-  - esempi di utilizzo.
+- Garantire test di roundtrip per v1–v4.
+- Script di benchmark di base (come `bench_all.sh`).
 
-### 4.2 Fase 1 – Ottimizzare gli header
+### 4.2 Fase 1 – Ottimizzazione header e K-simboli
 
-- Ridurre l’overhead di frequenze e vocabolari:
-  - non salvare simboli con `freq == 0`,
-  - usare tipi più compatti quando possibile,
-  - considerare Huffman “canonico” per ridurre la quantità di metadati.
-- Valutare i miglioramenti su:
-  - file piccoli,
-  - medi,
-  - grandi.
+- Header v1 compresso (già fatto).
+- Generalizzare v3/v4 a **K simboli** (già fatto a livello di formato + implementazione Python).
+- In futuro: ridurre l’overhead delle tabelle di frequenze e dei vocabolari per v2–v4.
 
-### 4.3 Fase 2 – Lemmatizzatore & Step 5
+### 4.3 Fase 2 – Lemmatizzatore & Step5
 
 - Integrare un lemmatizzatore italiano (quando/SE sarà opportuno).
-- Definire un formato v5 che separi:
-  - lemmi,
-  - tag morfologici,
-  - altri token.
-- Valutare il comportamento su:
-  - testi con morfologia ricca,
-  - differente registro linguistico.
+- Definire e sperimentare un formato v5 per lemmi + tag.
 
 ### 4.4 Fase 3 – Porting in C
 
-- Portare il **core Huffman** in C (v1).
-- Valutare un porting anche per:
-  - tokenizzazione parole (v4),
-  - eventuale API C che esponga compress/decompress su buffer.
+- Portare il **core Huffman** in C (v1),
+- eventualmente anche tokenizzazione e formati a parole (v4).
 
 ---
 

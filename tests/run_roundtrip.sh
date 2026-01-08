@@ -4,7 +4,7 @@ set -e
 PYTHON=${PYTHON:-python3}
 SCRIPT=src/python/gcc_huffman.py
 
-DATA_DIR=tests/testdata
+DATA_DIR=tests/data
 
 FILES=("small.txt" "medium.txt")
 MODES=("1" "2" "3" "4")

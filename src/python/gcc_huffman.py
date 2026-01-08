@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GCC - Grande Compressione Cucita-a-mano
+GCC - Grande Compressione Cucita-a-mano (oppure Giancarlo Cicellyn Comneno) :-)
 
 Core: Huffman su byte, riusato da:
 - Step 1: un solo stream (v1)
@@ -57,7 +57,7 @@ def build_huffman_tree(freq: List[int]) -> Optional[HuffmanNode]:
     # Caso speciale: un solo simbolo => aggiungo dummy
     if len(heap) == 1:
         f, _, only = heap[0]
-        dummy_symbol = (only.symbol + 1) % 256
+        dummy_symbol = (only.symbol + 1) % len(freq)
         dummy = HuffmanNode(freq=0, symbol=dummy_symbol)
         heapq.heappush(heap, (0, next(counter), dummy))
 
@@ -68,6 +68,100 @@ def build_huffman_tree(freq: List[int]) -> Optional[HuffmanNode]:
         heapq.heappush(heap, (parent.freq, next(counter), parent))
 
     return heap[0][2]
+
+def huffman_compress_ids(id_stream: List[int], vocab_size: int) -> Tuple[List[int], int, bytes]:
+    """
+    Variante di huffman_compress_core, ma per una sequenza di ID interi 0..vocab_size-1.
+    Restituisce:
+      - freq: frequenze per ciascun ID (len = vocab_size)
+      - lastbits: numero di bit validi nell'ultimo byte del bitstream
+      - bitstream: bytes con i bit Huffman MSB-first.
+    """
+    if vocab_size <= 0:
+        return [], 0, b""
+
+    # Frequenze sugli ID
+    freq = [0] * vocab_size
+    for sid in id_stream:
+        if sid < 0 or sid >= vocab_size:
+            raise ValueError(f"ID fuori range per huffman_compress_ids: {sid}")
+        freq[sid] += 1
+
+    # Se non c'è nessun simbolo, niente bitstream
+    if all(f == 0 for f in freq):
+        return freq, 0, b""
+
+    root = build_huffman_tree(freq)
+    if root is None:
+        return freq, 0, b""
+
+    codes = build_code_table(root)
+
+    out_bytes = bytearray()
+    current_byte = 0
+    bit_count = 0
+
+    for sid in id_stream:
+        code_bits = codes[sid]
+        for bit in code_bits:
+            current_byte = (current_byte << 1) | bit
+            bit_count += 1
+            if bit_count == 8:
+                out_bytes.append(current_byte)
+                current_byte = 0
+                bit_count = 0
+
+    lastbits = bit_count if bit_count > 0 else 0
+    if bit_count > 0:
+        current_byte <<= (8 - bit_count)
+        out_bytes.append(current_byte)
+
+    return freq, lastbits, bytes(out_bytes)
+
+
+def huffman_decompress_ids(freq: List[int], N_symbols: int, lastbits: int, bitstream: bytes) -> List[int]:
+    """
+    Decodifica una sequenza di ID (0..K-1) da un bitstream Huffman,
+    dato l'array di frequenze freq (len = K).
+    """
+    if N_symbols == 0:
+        return []
+
+    if not freq:
+        raise ValueError("freq vuoto in huffman_decompress_ids")
+
+    root = build_huffman_tree(freq)
+    if root is None:
+        return []
+
+    ids: List[int] = []
+    node = root
+    total_symbols = 0
+    total_bytes = len(bitstream)
+
+    for i, byte in enumerate(bitstream):
+        bits_in_this_byte = 8
+        if i == total_bytes - 1 and lastbits != 0:
+            bits_in_this_byte = lastbits
+
+        for bit_index in range(bits_in_this_byte):
+            bit = (byte >> (7 - bit_index)) & 1
+            node = node.left if bit == 0 else node.right
+            if node.symbol is not None and node.left is None and node.right is None:
+                ids.append(node.symbol)
+                total_symbols += 1
+                node = root
+                if total_symbols == N_symbols:
+                    break
+        if total_symbols == N_symbols:
+            break
+
+    if total_symbols != N_symbols:
+        raise ValueError(
+            f"huffman_decompress_ids: attesi {N_symbols} simboli, decodificati {total_symbols}"
+        )
+
+    return ids
 
 def build_code_table(root: HuffmanNode) -> Dict[int, List[int]]:
     codes: Dict[int, List[int]] = {}
@@ -515,44 +609,52 @@ def compress_bytes_v3(data: bytes) -> bytes:
 
     [ MAGIC(3) | VERSION(1)=3
       | N_TOKENS(8)
-      | VOCAB_SIZE(2)
+      | VOCAB_SIZE(4)
       | VOCAB:
           per i=0..VOCAB_SIZE-1:
              LEN(2) | TOKEN_BYTES
-      | FREQ[256]*4 | LASTBITS(1) | BITSTREAM_IDs(...) ]
+      | FREQ_ID[VOCAB_SIZE]*4
+      | LASTBITS(1)
+      | BITSTREAM_IDs(...) ]
     """
+    # Tokenizzazione: pseudo-sillabe + blocchi non-lettera
     tokens = tokenize_syllables_and_other(data)
     N_tokens = len(tokens)
 
     # Costruisci vocabolario: token_bytes -> id
     vocab: Dict[bytes, int] = {}
     vocab_list: List[bytes] = []
+    id_stream: List[int] = []
+
     for tok in tokens:
         if tok not in vocab:
             vocab[tok] = len(vocab_list)
             vocab_list.append(tok)
-
-    vocab_size = len(vocab_list)
-    if vocab_size > 256:
-        raise ValueError(
-            f"VOCAB troppo grande per v3 ( {vocab_size} > 256 ). "
-            "Per ora Step3 richiede al massimo 256 token distinti."
-        )
-
-    # Sequenza di ID come bytes
-    id_stream = bytearray()
-    for tok in tokens:
         id_stream.append(vocab[tok])
 
-    freq, lastbits, bitstream = huffman_compress_core(bytes(id_stream))
+    vocab_size = len(vocab_list)
 
+    # Caso particolare: nessun token
+    if N_tokens == 0:
+        header = bytearray()
+        header += MAGIC
+        header.append(VERSION_STEP3)
+        header += (0).to_bytes(8, "big")   # N_TOKENS
+        header += (0).to_bytes(4, "big")   # VOCAB_SIZE
+        header.append(0)                   # LASTBITS
+        return bytes(header)
+
+    # Huffman sugli ID
+    freq, lastbits, bitstream = huffman_compress_ids(id_stream, vocab_size)
+
+    # Header
     header = bytearray()
     header += MAGIC
     header.append(VERSION_STEP3)
     header += N_tokens.to_bytes(8, "big")
 
-    # VOCAB_SIZE (2 byte)
-    header += vocab_size.to_bytes(2, "big")
+    # VOCAB_SIZE (4 byte)
+    header += vocab_size.to_bytes(4, "big")
 
     # VOCAB
     for tok_bytes in vocab_list:
@@ -562,22 +664,22 @@ def compress_bytes_v3(data: bytes) -> bytes:
         header += L.to_bytes(2, "big")
         header += tok_bytes
 
-    # FREQ[256]*4
+    # FREQ_ID[VOCAB_SIZE]*4
     for f in freq:
         header += f.to_bytes(4, "big")
 
     # LASTBITS
     header.append(lastbits)
 
-    # Bitstream fino alla fine
     return bytes(header) + bitstream
 
 def decompress_bytes_v3(comp: bytes) -> bytes:
     """
-    Decodifica formato v3 (Step 3: sillabe).
+    Decodifica formato v3 (Step 3: sillabe) con VOCAB_SIZE variabile.
     """
     idx = 0
-    min_header_base = 3 + 1 + 8 + 2
+    # MAGIC(3) + VERSION(1) + N_TOKENS(8) + VOCAB_SIZE(4)
+    min_header_base = 3 + 1 + 8 + 4
     if len(comp) < min_header_base:
         raise ValueError("Dati troppo corti per GCC v3 (base header)")
 
@@ -594,8 +696,8 @@ def decompress_bytes_v3(comp: bytes) -> bytes:
     N_tokens = int.from_bytes(comp[idx:idx+8], "big")
     idx += 8
 
-    vocab_size = int.from_bytes(comp[idx:idx+2], "big")
-    idx += 2
+    vocab_size = int.from_bytes(comp[idx:idx+4], "big")
+    idx += 4
 
     # VOCAB
     vocab_list: List[bytes] = []
@@ -605,17 +707,18 @@ def decompress_bytes_v3(comp: bytes) -> bytes:
         L = int.from_bytes(comp[idx:idx+2], "big")
         idx += 2
         if idx + L > len(comp):
-            raise ValueError("File troncato (TOKEN bytes)")
-        tok_bytes = comp[idx:idx+L]
+            raise ValueError("File troncato (TOKEN)")
+        tok = comp[idx:idx+L]
         idx += L
-        vocab_list.append(tok_bytes)
+        vocab_list.append(tok)
 
-    # FREQ[256]*4
-    if idx + 256*4 + 1 > len(comp):
-        raise ValueError("File troncato (freq + lastbits)")
+    # FREQ_ID[VOCAB_SIZE]*4 + LASTBITS(1)
+    freq_bytes = vocab_size * 4
+    if idx + freq_bytes + 1 > len(comp):
+        raise ValueError("File troncato (FREQ_ID o LASTBITS)")
 
     freq: List[int] = []
-    for _ in range(256):
+    for _ in range(vocab_size):
         f = int.from_bytes(comp[idx:idx+4], "big")
         idx += 4
         freq.append(f)
@@ -625,20 +728,20 @@ def decompress_bytes_v3(comp: bytes) -> bytes:
 
     bitstream = comp[idx:]
 
-    # Decodifica stream di ID
-    id_bytes = huffman_decompress_core(freq, bitstream, N_tokens, lastbits)
+    if N_tokens == 0:
+        return b""
+
+    ids = huffman_decompress_ids(freq, N_tokens, lastbits, bitstream)
 
     # Ricostruisci il testo concatenando i token
     out = bytearray()
-    for b in id_bytes:
-        tok = vocab_list[b]
-        out += tok
+    for sid in ids:
+        if sid < 0 or sid >= len(vocab_list):
+            raise ValueError("ID token fuori range")
+        out += vocab_list[sid]
 
     return bytes(out)
 
-# -------------------
-# Step 4: formato v4 (parole intere + blocchi non-lettera)
-# -------------------
 def tokenize_words_and_other(data: bytes) -> List[bytes]:
     """
     Trasforma il testo in token:
@@ -670,48 +773,56 @@ def tokenize_words_and_other(data: bytes) -> List[bytes]:
 
 def compress_bytes_v4(data: bytes) -> bytes:
     """
-    Formato v4 (Step 4: parole intere):
+    Formato v4 (Step 4: parole intere + blocchi non-lettera):
 
     [ MAGIC(3) | VERSION(1)=4
       | N_TOKENS(8)
-      | VOCAB_SIZE(2)
+      | VOCAB_SIZE(4)
       | VOCAB:
           per i=0..VOCAB_SIZE-1:
              LEN(2) | TOKEN_BYTES
-      | FREQ[256]*4 | LASTBITS(1) | BITSTREAM_IDs(...) ]
+      | FREQ_ID[VOCAB_SIZE]*4
+      | LASTBITS(1)
+      | BITSTREAM_IDs(...) ]
     """
+    # Tokenizzazione: parole intere + blocchi non-lettera
     tokens = tokenize_words_and_other(data)
     N_tokens = len(tokens)
 
     # Costruisci vocabolario: token_bytes -> id
     vocab: Dict[bytes, int] = {}
     vocab_list: List[bytes] = []
+    id_stream: List[int] = []
+
     for tok in tokens:
         if tok not in vocab:
             vocab[tok] = len(vocab_list)
             vocab_list.append(tok)
-
-    vocab_size = len(vocab_list)
-    if vocab_size > 256:
-        raise ValueError(
-            f"VOCAB troppo grande per v4 ( {vocab_size} > 256 ). "
-            "Per ora Step4 richiede al massimo 256 token distinti."
-        )
-
-    # Sequenza di ID come bytes
-    id_stream = bytearray()
-    for tok in tokens:
         id_stream.append(vocab[tok])
 
-    freq, lastbits, bitstream = huffman_compress_core(bytes(id_stream))
+    vocab_size = len(vocab_list)
 
+    # Caso particolare: nessun token
+    if N_tokens == 0:
+        header = bytearray()
+        header += MAGIC
+        header.append(VERSION_STEP4)
+        header += (0).to_bytes(8, "big")   # N_TOKENS
+        header += (0).to_bytes(4, "big")   # VOCAB_SIZE
+        header.append(0)                   # LASTBITS
+        return bytes(header)
+
+    # Huffman sugli ID
+    freq, lastbits, bitstream = huffman_compress_ids(id_stream, vocab_size)
+
+    # Header
     header = bytearray()
     header += MAGIC
     header.append(VERSION_STEP4)
     header += N_tokens.to_bytes(8, "big")
 
-    # VOCAB_SIZE (2 byte)
-    header += vocab_size.to_bytes(2, "big")
+    # VOCAB_SIZE (4 byte)
+    header += vocab_size.to_bytes(4, "big")
 
     # VOCAB
     for tok_bytes in vocab_list:
@@ -721,24 +832,24 @@ def compress_bytes_v4(data: bytes) -> bytes:
         header += L.to_bytes(2, "big")
         header += tok_bytes
 
-    # FREQ[256]*4
+    # FREQ_ID[VOCAB_SIZE]*4
     for f in freq:
         header += f.to_bytes(4, "big")
 
     # LASTBITS
     header.append(lastbits)
 
-    # Bitstream fino alla fine
     return bytes(header) + bitstream
 
 def decompress_bytes_v4(comp: bytes) -> bytes:
     """
-    Decodifica formato v4 (Step 4: parole intere).
+    Decodifica formato v4 (Step 4: parole intere + blocchi non-lettera) con VOCAB_SIZE variabile.
     """
     idx = 0
-    min_header_base = 3 + 1 + 8 + 2
+    # MAGIC(3) + VERSION(1) + N_TOKENS(8) + VOCAB_SIZE(4)
+    min_header_base = 3 + 1 + 8 + 4
     if len(comp) < min_header_base:
-        raise ValueError("Dati troppo cortti per GCC v4 (base header)")
+        raise ValueError("Dati troppo corti per GCC v4 (base header)")
 
     magic = comp[idx:idx+3]
     idx += 3
@@ -753,8 +864,8 @@ def decompress_bytes_v4(comp: bytes) -> bytes:
     N_tokens = int.from_bytes(comp[idx:idx+8], "big")
     idx += 8
 
-    vocab_size = int.from_bytes(comp[idx:idx+2], "big")
-    idx += 2
+    vocab_size = int.from_bytes(comp[idx:idx+4], "big")
+    idx += 4
 
     # VOCAB
     vocab_list: List[bytes] = []
@@ -764,17 +875,18 @@ def decompress_bytes_v4(comp: bytes) -> bytes:
         L = int.from_bytes(comp[idx:idx+2], "big")
         idx += 2
         if idx + L > len(comp):
-            raise ValueError("File troncato (TOKEN bytes)")
-        tok_bytes = comp[idx:idx+L]
+            raise ValueError("File troncato (TOKEN)")
+        tok = comp[idx:idx+L]
         idx += L
-        vocab_list.append(tok_bytes)
+        vocab_list.append(tok)
 
-    # FREQ[256]*4
-    if idx + 256*4 + 1 > len(comp):
-        raise ValueError("File troncato (freq + lastbits)")
+    # FREQ_ID[VOCAB_SIZE]*4 + LASTBITS(1)
+    freq_bytes = vocab_size * 4
+    if idx + freq_bytes + 1 > len(comp):
+        raise ValueError("File troncato (FREQ_ID o LASTBITS)")
 
     freq: List[int] = []
-    for _ in range(256):
+    for _ in range(vocab_size):
         f = int.from_bytes(comp[idx:idx+4], "big")
         idx += 4
         freq.append(f)
@@ -784,20 +896,19 @@ def decompress_bytes_v4(comp: bytes) -> bytes:
 
     bitstream = comp[idx:]
 
-    # Decodifica stream di ID
-    id_bytes = huffman_decompress_core(freq, bitstream, N_tokens, lastbits)
+    if N_tokens == 0:
+        return b""
 
-    # Ricostruisci il testo concatenando i token
+    ids = huffman_decompress_ids(freq, N_tokens, lastbits, bitstream)
+
     out = bytearray()
-    for b in id_bytes:
-        tok = vocab_list[b]
-        out += tok
+    for sid in ids:
+        if sid < 0 or sid >= len(vocab_list):
+            raise ValueError("ID token fuori range")
+        out += vocab_list[sid]
 
     return bytes(out)
 
-# -------------------
-# Helper su file
-# -------------------
 def compress_file_v1(input_path: str | Path, output_path: str | Path) -> None:
     data = Path(input_path).read_bytes()
     comp = compress_bytes_v1(data)

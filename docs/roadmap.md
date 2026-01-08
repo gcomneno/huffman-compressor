@@ -1,4 +1,5 @@
 # Roadmap – huffman-compressor
+
 Questo file raccoglie le idee di sviluppo per `huffman-compressor`, organizzate per “strati di ambizione”:
 - ✅ Done / prototipato
 - 🟡 TODO (ragionevole)
@@ -11,22 +12,27 @@ Questo file raccoglie le idee di sviluppo per `huffman-compressor`, organizzate 
 
 ### ✅ Implementato
 
-- Core Huffman generico su byte:
-  - costruzione tabella frequenze (`freq[256]`),
+- Core Huffman generico:
+  - costruzione tabella frequenze (lista di `u32`),
   - albero di Huffman,
   - tabella dei codici,
   - encode/decode di bitstream.
 - Formati:
-  - **v1** – Step1: byte grezzi
-  - **v2** – Step2: split V/C/O
-  - **v3** – Step3: pseudo-sillabe + blocchi non-lettera
-  - **v4** – Step4: parole intere + blocchi non-lettera
+  - **v1** – Step1: byte grezzi (header compatto: solo simboli con freq > 0),
+  - **v2** – Step2: split V/C/O,
+  - **v3** – Step3: pseudo-sillabe + blocchi non-lettera (vocabolario + ID),
+  - **v4** – Step4: parole intere + blocchi non-lettera (vocabolario + ID).
+- v3/v4: formati generalizzati a **K simboli** (VOCAB_SIZE `u32`, FREQ_ID di lunghezza VOCAB_SIZE).
 - CLI in Python:
-  - `c1/d1`, `c2/d2`, `c3/d3`, `c4/d4`
+  - `c1/d1`, `c2/d2`, `c3/d3`, `c4/d4`.
+- Script di test:
+  - `tests/run_roundtrip.sh` – verifica che v1–v4 siano lossless sui file di esempio,
+  - `scripts/bench_v1.sh` – benchmark rapido solo v1,
+  - `scripts/bench_all.sh` – benchmark v1–v4 su small/medium/large.
 - Documentazione di base:
-  - `README.md`
-  - `docs/formats.md`
-  - `docs/design-notes.md`
+  - `README.md` (IT+EN),
+  - `docs/formats.md`,
+  - `docs/design-notes.md`.
 
 ---
 
@@ -36,53 +42,68 @@ Obiettivo: rendere il prototipo Python comodo da usare e da capire.
 
 ### TODO
 
-- [ ] **Test di roundtrip per tutti i formati**
+- [x] **Test di roundtrip per tutti i formati**
   - Script/test che:
-    - per alcuni file di esempio (`tests/testdata/*`),
+    - per alcuni file di esempio (`tests/data/*`),
     - eseguono:  
       `input → compress (v1..v4) → decompress → input'`
     - verificano che `input == input'`.
 
-- [ ] **Script di benchmark base**
-  - Fornire uno script (es. `scripts/bench.py`) che:
+- [x] **Script di benchmark base**
+  - Fornire script (es. `scripts/bench_v1.sh`, `scripts/bench_all.sh`) che:
     - per una lista di file:
-      - calcola dimensione compressa v1–v4,
-      - stampa un mini report:
+      - calcolano dimensione compressa v1–v4,
+      - stampano un mini report:
         - size originale, size compressa, rapporto, bit/simbolo.
-    - eventualmente confronta con `gzip` come riferimento.
+    - permettono di osservare il comportamento dei vari Step su:
+      - file piccoli,
+      - medi,
+      - grandi.
 
-- [ ] **Pulizia / refactoring minimo**
+- [x] **Pulizia / refactoring minimo**
   - Migliorare la leggibilità di `gcc_huffman.py`:
     - separare meglio sezione core vs pre-processing,
-    - rendere più chiari i nomi delle funzioni,
-    - aggiungere commenti sintetici sui formati (rimando a `docs/formats.md`).
+    - introdurre helper per Huffman sugli ID (riuso tra v3/v4),
+    - aggiungere commenti sintetici, rimandando a `docs/formats.md`.
 
 ---
 
-## 2. Fase 1 – Ottimizzazione header 🟡
+## 2. Fase 1 – Ottimizzazione header & K-simboli 🟡
 
-Obiettivo: ridurre il peso morto, soprattutto su file piccoli/medi.
+Obiettivo: ridurre il peso morto, soprattutto su file piccoli/medi, e togliere limiti artificiali.
 
-### TODO
+### ✅ Già fatto
 
-- [x] **Header v1 “compresso”** (implementato in Python: v1 ora salva solo i simboli con frequenza > 0)
-  - Passare da:
+- [x] **Header v1 “compresso”**
+  - Passaggio da:
     - 256×`u32` freq fissa
   - a:
-    - `NUM_SYMS` (`u16` o `u8`) = quanti simboli compaiono,
+    - `NUM_SYMS` (`u16`) = quanti simboli compaiono,
     - per ciascun simbolo:
       - `SYMBOL` (`u8`),
       - `FREQ` (`u32`).
-  - Mantenere compatibilità logica con l’attuale decoder (o incrementare la versione in modo esplicito).
+  - Migliora notevolmente il comportamento su file piccoli/medi.
 
-- [ ] **Applicare la stessa idea a v2–v4**
-  - v2: ridurre header per `mask`, `vowels`, `cons`.
-  - v3/v4: ridurre tabella `FREQ[256]` sugli ID dei token.
+- [x] **Generalizzare v3/v4 a K simboli**
+  - `VOCAB_SIZE` portato a `u32`,
+  - frequenze sugli ID: `FREQ_ID[VOCAB_SIZE]` (niente più `FREQ[256]` fissa),
+  - Huffman lavora su ID `0..VOCAB_SIZE-1`,
+  - eliminato il limite artificiale `VOCAB_SIZE ≤ 256`,
+  - beneficio pratico: v3/v4 ora funzionano anche su file grandi, dove v4 (parole) ha mostrato rapporti di compressione molto migliori di v1 (es. ~0.236 vs ~0.555 su `tests/data/large.txt`).
 
-- [ ] **Benchmark “prima/dopo header”**
+### TODO
+
+- [ ] **Applicare idee di header più compatti a v2–v4**
+  - v2:
+    - ridurre header per `mask`, `vowels`, `cons`,
+    - valutare se si può evitare di salvare 256 freq complete per stream.
+  - v3/v4:
+    - valutare encoding più compatti per le frequenze (`FREQ_ID`),
+    - eventualmente passare a varianti di Huffman “canonico” (salvare solo lunghezze dei codici).
+- [ ] **Benchmark “prima/dopo” ottimizzazioni header**
   - Confrontare:
-    - v1/v2/v3/v4 attuali,
-    - v1/v2/v3/v4 con header ottimizzati,
+    - versioni correnti di v2–v4,
+    - versioni con header ottimizzati,
   - su:
     - file piccoli (1–10 KB),
     - medi (10–200 KB),
@@ -107,7 +128,7 @@ Obiettivo: iniziare a giocare sul **livello lemma/morfologia**.
     - licenza.
 
 - [ ] **Spec di formato v5 (lemmi + tag)**
-  - Definire in `docs/formats.md` una bozza di layout v5:
+  - Definire in `docs/formats.md` / `docs/design-notes.md` una bozza di layout v5:
     - vocabolio lemmi,
     - vocabolio tag,
     - stream di ID lemmi,

@@ -7,7 +7,7 @@ All formats share:
 - **Version**: 1 byte, identifies the format variant.
 - **Endianness**: all multi-byte integers are stored in **big-endian**.
 - **Huffman core**:
-  - in most formats (v2–v4) frequencies are stored as 256 × `uint32`; in v1 only symbols with non-zero frequency are stored explicitly,
+  - in most formats frequencies are stored as `uint32` counters,
   - Huffman codes are implicit (reconstructed from frequencies),
   - bitstreams are stored as raw bytes, most significant bit first.
 
@@ -30,7 +30,7 @@ Version byte: `0x01`
 - Input is treated as a flat sequence of bytes.
 - A single **Huffman** code is built over the 256 possible byte values.
 - The encoded file contains:
-  - a header with original size and a compact frequency table,
+  - a header with original size and a **compact** frequency table (only non-zero symbols),
   - a Huffman bitstream representing the original bytes.
 
 ### Layout
@@ -59,7 +59,7 @@ Version byte: `0x01`
   * bits are read MSB-first within each byte,
   * decoding stops after `N` symbols have been produced.
 * `LASTBITS`:
-  * if `N == 0`, `NUM_SYMS` is 0, `LASTBITS` is 0 e `DATA` è vuoto,
+  * if `N == 0`, `NUM_SYMS` is 0, `LASTBITS` is 0 and `DATA` is empty,
   * otherwise, last byte in `DATA` has `LASTBITS` valid bits (1..8); remaining bits in that byte are padding and must be ignored.
 
 ---
@@ -79,7 +79,7 @@ Input text is split into three logical streams:
 * `vowels_stream` : all vowel bytes, in order.
 * `cons_stream` : all other bytes (consonants + non-letters), in order.
 
-Each stream is independently Huffman-compressed using the same core as v1.
+Each stream is independently Huffman-compressed.
 
 ### Layout
 
@@ -125,7 +125,7 @@ Each stream is independently Huffman-compressed using the same core as v1.
 
 ---
 
-## v3 – Step 3: pseudo-syllables + non-letter blocks
+## v3 – Step 3: pseudo-syllables + non-letter blocks (K symbols)
 
 Version byte: `0x03`
 
@@ -137,12 +137,12 @@ The input is tokenized into:
   * crude rule: split after each vowel,
 * **non-letter sequences** (spaces, punctuation, digits, etc.), kept as separate blocks.
 
-Each distinct token (syllable or non-letter block) is added to a **vocabulary** and assigned an ID in `[0, VOCAB_SIZE-1]`, with `VOCAB_SIZE ≤ 256`.
+Each distinct token (syllable or non-letter block) is added to a **vocabulary** and assigned an ID in `[0, VOCAB_SIZE-1]`.
 
 The compressed file stores:
 
 * the list of tokens in the order of their first appearance (vocabulary),
-* a Huffman-encoded sequence of token IDs (one ID per token).
+* a Huffman-encoded sequence of token IDs (one ID per token), over an alphabet of size `VOCAB_SIZE` (no più limitato a 256).
 
 ### Layout
 
@@ -153,9 +153,9 @@ The compressed file stores:
 | MAGIC      | B[3]   | 3                            | "GCC"                       |
 | VERSION    | u8     | 1                            | format version = 3          |
 | N_TOKENS   | u64    | 8                            | number of tokens in text    |
-| VOCAB_SIZE | u16    | 2                            | number of distinct tokens   |
+| VOCAB_SIZE | u32    | 4                            | number of distinct tokens K |
 | VOCAB[i]   | -      | variable, see below          | token definitions           |
-| FREQ[j]    | u32    | 256 × 4 = 1024               | freq table for ID stream    |
+| FREQ_ID[j] | u32    | VOCAB_SIZE × 4               | freq table for ID stream    |
 | LASTBITS   | u8     | 1                            | valid bits in last byte     |
 | BS_IDS     | B[...] | rest of file                 | bitstream of token ID seq   |
 +------------+--------+------------------------------+-----------------------------+
@@ -178,25 +178,25 @@ The compressed file stores:
   * sequences of ASCII letters → split into pseudo-syllables,
   * sequences of non-letters → a single token each.
 * `VOCAB` defines an ordered list of tokens; the index in this list is the token ID.
-* The sequence of IDs is encoded using Huffman (one symbol = one ID byte).
+* A Huffman tree is built over the alphabet `0..VOCAB_SIZE-1` using `FREQ_ID`.
 * `N_TOKENS` = number of IDs to be decoded.
 * Decoding:
   1. Read `VOCAB_SIZE`, then read `VOCAB` tokens into `vocab_list`.
-  2. Build Huffman tree from `FREQ`.
-  3. Decode `N_TOKENS` ID bytes from `BS_IDS` (using `LASTBITS`).
-  4. For each ID `b`, append `vocab_list[b]` to the output.
+  2. Build Huffman tree from the `VOCAB_SIZE` frequencies in `FREQ_ID`.
+  3. Decode `N_TOKENS` ID **symbols** from `BS_IDS` (using `LASTBITS`).
+  4. For each ID `sid`, append `vocab_list[sid]` to the output.
 
-Note: v3 is currently limited to `VOCAB_SIZE ≤ 256`.
+Note: in teoria `VOCAB_SIZE` può essere fino a `2^32 - 1`. In pratica, limiti di memoria/implementazione possono ridurre il massimo effettivo.
 
 ---
 
-## v4 – Step 4: whole words + non-letter blocks
+## v4 – Step 4: whole words + non-letter blocks (K symbols)
 
 Version byte: `0x04`
 
 ### Overview
 
-Similar to v3, but tokenization is simpler:
+Similar to v3, but tokenization è più semplice:
 
 * **word tokens**: sequences of ASCII letters (`A–Z`, `a–z`),
 * **other tokens**: sequences of non-letter bytes.
@@ -207,8 +207,6 @@ Vocabulary and Huffman encoding are done exactly as in v3, but tokens represent 
 
 ### Layout
 
-Identical to v3, except `VERSION = 4` and semantics of tokens:
-
 ```text
 +------------+--------+------------------------------+-----------------------------+
 | Field      | Type   | Size (bytes)                 | Description                 |
@@ -216,9 +214,9 @@ Identical to v3, except `VERSION = 4` and semantics of tokens:
 | MAGIC      | B[3]   | 3                            | "GCC"                       |
 | VERSION    | u8     | 1                            | format version = 4          |
 | N_TOKENS   | u64    | 8                            | number of tokens in text    |
-| VOCAB_SIZE | u16    | 2                            | number of distinct tokens   |
+| VOCAB_SIZE | u32    | 4                            | number of distinct tokens K |
 | VOCAB[i]   | -      | variable (LEN + TOKEN bytes) | token definitions           |
-| FREQ[j]    | u32    | 256 × 4 = 1024               | freq table for ID stream    |
+| FREQ_ID[j] | u32    | VOCAB_SIZE × 4               | freq table for ID stream    |
 | LASTBITS   | u8     | 1                            | valid bits in last byte     |
 | BS_IDS     | B[...] | rest of file                 | bitstream of token ID seq   |
 +------------+--------+------------------------------+-----------------------------+
@@ -235,11 +233,12 @@ LEN (u16) | TOKEN (B[LEN])
 * Tokenization:
   * sequences of ASCII letters → one word token,
   * sequences of non-letters → one token per contiguous block.
-* The rest (vocab, ID encoding, decoding) behaves exactly like v3.
-* Output reconstruction:
-  * concatenate `TOKEN` bytes for each decoded ID in order.
+* The rest (vocab, ID encoding, decoding) behaves exactly like v3:
+  * frequencies are per-ID (`0..VOCAB_SIZE-1`),
+  * Huffman tree is built over that ID alphabet,
+  * `N_TOKENS` ID symbols are decoded from `BS_IDS` using `LASTBITS`.
 
-Again, v4 is currently limited to `VOCAB_SIZE ≤ 256`.
+In pratica, v4 è il livello in cui “parole intere + vocabolario + ID Huffman” diventano davvero competitivi su testi lunghi rispetto al semplice Huffman sui byte (v1).
 
 ---
 
