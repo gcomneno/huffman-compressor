@@ -168,7 +168,7 @@ Note:
 
 ## 3. Filosofia di implementazione
 
-### 3.1 Core Hugffman riusabile
+### 3.1 Core Huffman riusabile
 
 Il progetto si basa su un **core Huffman** unico:
 
@@ -185,8 +185,9 @@ I vari Step differiscono solo per il **pre-processing** e per il formato dell’
 
 Impostazione attuale:
 
-- gli header sono volutamente **ridondanti e verbosi**:
-  - 256 frequenze per ogni stream,
+- gli header (soprattutto v2–v4) sono volutamente **ridondanti e verbosi**:
+  - 256 frequenze per ogni stream nei formati che lavorano su ID byte,
+  - v1 è già stato ottimizzato per salvare solo i simboli effettivamente usati,
   - vocabolari espliciti salvati in chiaro,
   - lunghezze salvate in `u64` anche dove basterebbe meno.
 - questo aumenta l’overhead sui file piccoli, ma:
@@ -201,6 +202,7 @@ L’idea è:
 ---
 
 ### 3.3 Trade-off: header vs guadagno
+
 Il progetto mette in luce un concetto spesso invisibile nei compressori reali:
 > un modello più intelligente non è gratis:  
 > costa header, vocabolari, metadati.

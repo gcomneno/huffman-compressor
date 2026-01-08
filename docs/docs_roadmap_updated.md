@@ -65,7 +65,7 @@ Obiettivo: ridurre il peso morto, soprattutto su file piccoli/medi.
 
 ### TODO
 
-- [ ] **Header v1 “compresso”**
+- [x] **Header v1 “compresso”** (implementato in Python: v1 ora salva solo i simboli con frequenza > 0)
   - Passare da:
     - 256×`u32` freq fissa
   - a:
@@ -108,8 +108,8 @@ Obiettivo: iniziare a giocare sul **livello lemma/morfologia**.
 
 - [ ] **Spec di formato v5 (lemmi + tag)**
   - Definire in `docs/formats.md` una bozza di layout v5:
-    - vocabolario lemmi,
-    - vocabolario tag,
+    - vocabolio lemmi,
+    - vocabolio tag,
     - stream di ID lemmi,
     - stream di ID tag,
     - stream blocchi non-lettera,

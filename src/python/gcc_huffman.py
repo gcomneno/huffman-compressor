@@ -172,29 +172,64 @@ def huffman_decompress_core(freq: List[int], bitstream: bytes, N: int, lastbits:
 # -------------------
 def compress_bytes_v1(data: bytes) -> bytes:
     """
-    Formato v1:
-    [ MAGIC(3) | VERSION(1) | N(8) | FREQ[256]*4 | LASTBITS(1) | DATA(...) ]
+    Formato v1 (ottimizzato):
+    [ MAGIC(3) | VERSION(1) | N(8) | NUM_SYMS(2)
+      | (SYMBOL(1) + FREQ(4)) * NUM_SYMS
+      | LASTBITS(1)
+      | DATA(...) = bitstream Huffman ]
     """
     N = len(data)
+
+    # Usa il core Huffman esistente: freq[256], lastbits, bitstream
     freq, lastbits, bitstream = huffman_compress_core(data)
+
+    # Caso particolare: file vuoto
+    if N == 0:
+        header = bytearray()
+        header += MAGIC
+        header.append(VERSION_STEP1)          # di solito = 1
+        header += (0).to_bytes(8, "big")      # N = 0
+        header += (0).to_bytes(2, "big")      # NUM_SYMS = 0
+        header.append(0)                      # LASTBITS = 0
+        # nessun bitstream
+        return bytes(header)
+
+    # Simboli effettivamente usati (freq > 0)
+    used = [(sym, f) for sym, f in enumerate(freq) if f > 0]
+    num_syms = len(used)
+    if num_syms > 0xFFFF:
+        raise ValueError("Troppi simboli distinti per NUM_SYMS (u16)")
 
     header = bytearray()
     header += MAGIC
     header.append(VERSION_STEP1)
     header += N.to_bytes(8, "big")
+    header += num_syms.to_bytes(2, "big")
 
-    for f in freq:
-        header += f.to_bytes(4, "big")
+    for sym, f in used:
+        header.append(sym)                 # SYMBOL (u8)
+        header += f.to_bytes(4, "big")     # FREQ (u32)
 
     header.append(lastbits)
+
     return bytes(header) + bitstream
 
-def decompress_bytes_v1(comp: bytes) -> bytes:
-    min_header = 3 + 1 + 8 + 256 * 4 + 1
-    if len(comp) < min_header:
-        raise ValueError("Dati troppo corti per GCC v1")
 
+def decompress_bytes_v1(comp: bytes) -> bytes:
+    """
+    Decodifica formato v1 ottimizzato:
+
+    [ MAGIC(3) | VERSION(1) | N(8) | NUM_SYMS(2)
+      | (SYMBOL(1) + FREQ(4)) * NUM_SYMS
+      | LASTBITS(1)
+      | DATA(...) ]
+    """
     idx = 0
+    # header minimo: MAGIC(3) + VERSION(1) + N(8) + NUM_SYMS(2) + LASTBITS(1)
+    min_header = 3 + 1 + 8 + 2 + 1
+    if len(comp) < min_header:
+        raise ValueError("Dati troppo corti per GCC v1 (header minimale)")
+
     magic = comp[idx:idx+3]
     idx += 3
     if magic != MAGIC:
@@ -207,16 +242,35 @@ def decompress_bytes_v1(comp: bytes) -> bytes:
     N = int.from_bytes(comp[idx:idx+8], "big")
     idx += 8
 
-    freq = []
-    for _ in range(256):
+    num_syms = int.from_bytes(comp[idx:idx+2], "big")
+    idx += 2
+
+    # Caso file vuoto
+    if N == 0:
+        # ci aspettiamo num_syms == 0 e LASTBITS = 0, ma in pratica
+        # testo vuoto => ritorna subito
+        return b""
+
+    # Ricostruisci freq[256] partendo da simboli usati
+    freq = [0] * 256
+    for _ in range(num_syms):
+        if idx + 1 + 4 > len(comp):
+            raise ValueError("File troncato nelle coppie (SYMBOL,FREQ)")
+        sym = comp[idx]
+        idx += 1
         f = int.from_bytes(comp[idx:idx+4], "big")
         idx += 4
-        freq.append(f)
+        freq[sym] = f
+
+    if idx >= len(comp):
+        raise ValueError("File troncato: manca LASTBITS")
 
     lastbits = comp[idx]
     idx += 1
+
     bitstream = comp[idx:]
 
+    # Usa il core di decompressione esistente
     return huffman_decompress_core(freq, bitstream, N, lastbits)
 
 # -------------------
