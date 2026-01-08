@@ -1,22 +1,6 @@
-# huffman-compressor
-> A layered experimental text compressor for Italian, inspired by linguistic structure… and baked like a huffman. 🍝
----
+# Huffman Compressor (IT)
 
-## Overview (EN)
-
-**huffman-compressor** is an experimental text compressor that tries to exploit different *linguistic layers* of Italian, instead of treating text as a flat stream of bytes.
-
-It is **not** meant to beat industrial compressors like gzip.  
-It is a playground for:
-- understanding how compression and language structure interact,
-- experimenting with different preprocessing layers (bytes, vowels/consonants, syllables, words, lemmas),
-- building prototypes first in Python, and later (maybe) porting parts to C.
-
-The current implementation is a single Python script using **Huffman coding** on top of several preprocessing strategies (“steps”).
-
----
-
-## Panoramica (IT)
+## Panoramica
 
 **huffman-compressor** è un compressore di testo **sperimentale** che prova a usare i vari *strati* della lingua italiana (byte, lettere, sillabe, parole, lemmi) invece di schiacciare tutto alla cieca.
 
@@ -42,7 +26,7 @@ Attualmente sono implementati 4 step (formati v1–v4) + un’idea per v5:
 - Il file viene visto come semplice sequenza di byte.
 - Viene applicata la classica compressione **Huffman** sui byte.
 - Formato con:
-  - header (magic `"GCC"`, versione, numero di byte, tabella frequenze),
+  - header (magic `"GCC"`, versione, numero di byte, *tabella frequenze compatta* solo per i simboli usati),
   - bitstream Huffman.
 
 Comandi CLI: `c1` / `d1`.
@@ -125,14 +109,14 @@ Comandi CLI: `c4` / `d4`.
 ### Prerequisites
 
 - Python 3.x
-- Il file `gcc_huffman.py` (ad esempio in `src/python/gcc_huffman.py`).
+- Il file principale: `src/python/gcc_huffman.py`.
 
 Dal root del progetto:
 
 ```bash
 cd huffman-compressor
-python3 src/python/gcc_huffman.py  # oppure ./gcc_huffman.py se è nella root
-````
+python3 src/python/gcc_huffman.py
+```
 
 ### Command line interface
 
@@ -153,25 +137,25 @@ Dove `<mode>` può essere:
 * `c4` – compress Step4 (whole words, v4)
 * `d4` – decompress Step4
 
-Esempi (se `gcc_huffman.py` è nella root):
+Esempi:
 
 ```bash
 # Step 1 – byte-level Huffman
-python3 gcc_huffman.py c1 input.txt output_step1.gcc
-python3 gcc_huffman.py d1 output_step1.gcc recon_step1.txt
+python3 src/python/gcc_huffman.py c1 input.txt output_step1.gcc
+python3 src/python/gcc_huffman.py d1 output_step1.gcc recon_step1.txt
 diff input.txt recon_step1.txt  # should be empty (lossless)
 
 # Step 2 – V/C/O
-python3 gcc_huffman.py c2 input.txt output_step2.gcc
-python3 gcc_huffman.py d2 output_step2.gcc recon_step2.txt
+python3 src/python/gcc_huffman.py c2 input.txt output_step2.gcc
+python3 src/python/gcc_huffman.py d2 output_step2.gcc recon_step2.txt
 
 # Step 3 – pseudo-syllables
-python3 gcc_huffman.py c3 input.txt output_step3.gcc
-python3 gcc_huffman.py d3 output_step3.gcc recon_step3.txt
+python3 src/python/gcc_huffman.py c3 input.txt output_step3.gcc
+python3 src/python/gcc_huffman.py d3 output_step3.gcc recon_step3.txt
 
 # Step 4 – whole words
-python3 gcc_huffman.py c4 input.txt output_step4.gcc
-python3 gcc_huffman.py d4 output_step4.gcc recon_step4.txt
+python3 src/python/gcc_huffman.py c4 input.txt output_step4.gcc
+python3 src/python/gcc_huffman.py d4 output_step4.gcc recon_step4.txt
 ```
 
 Ogni modalità di compressione stampa anche statistiche di base:
@@ -179,6 +163,16 @@ Ogni modalità di compressione stampa anche statistiche di base:
 * dimensione originale / compressa,
 * rapporto di compressione,
 * bit per simbolo (8.0 = non compresso).
+
+---
+
+## Docs
+
+Per dettagli sui formati binari e sulle idee di design:
+
+- `docs/formats.md` – layout dei formati v1–v4 (e idee per v5),
+- `docs/design-notes.md` – filosofia generale e “strati linguistici”,
+- `docs/roadmap.md` – cose fatte, TODO, idee folli future.
 
 ---
 
@@ -205,8 +199,8 @@ Planned / possible future work:
 
 1. **Header optimizations**
 
-   * salvare solo simboli con freq > 0,
-   * ridurre la dimensione delle tabelle nell’header.
+   * salvare solo simboli con freq > 0 (v1 già fatto),
+   * ridurre la dimensione delle tabelle nell’header per v2–v4.
 
 2. **Real lemmatizer integration (Step5)**
 
@@ -240,3 +234,20 @@ Il progetto è **sperimentale** e non stabile.
 - I formati binari (v1–v4) possono cambiare in futuro.
 - L’implementazione in Python è un prototipo da laboratorio, non software di produzione.
 - L’obiettivo è esplorare idee (compressione + struttura linguistica), non battere gzip.
+
+---
+
+# Huffman Compressor (EN)
+> A layered experimental text compressor for Italian, inspired by linguistic structure… and baked like a huffman. 🍝
+
+## Overview
+
+**huffman-compressor** is an experimental text compressor that tries to exploit different *linguistic layers* of Italian, instead of treating text as a flat stream of bytes.
+
+It is **not** meant to beat industrial compressors like gzip.  
+It is a playground for:
+- understanding how compression and language structure interact,
+- experimenting with different preprocessing layers (bytes, vowels/consonants, syllables, words, lemmas),
+- building prototypes first in Python, and later (maybe) porting parts to C.
+
+The current implementation uses a single main Python script (`src/python/gcc_huffman.py`) with **Huffman coding** on top of several preprocessing strategies (“steps”).
